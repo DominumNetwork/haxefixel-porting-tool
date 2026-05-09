@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jobStore } from '../../../../lib/jobStore';
+import { jobStore } from '@/lib/jobStore';
 
 export async function GET(_: NextRequest, { params }: { params: { jobId: string } }) {
   const job = jobStore.get(params.jobId);
