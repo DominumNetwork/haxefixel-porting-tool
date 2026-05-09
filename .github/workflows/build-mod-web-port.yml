@@ -1,0 +1,81 @@
+name: Build FNF Mod Web Port
+
+on:
+  workflow_dispatch:
+    inputs:
+      mod_zip_url:
+        description: "URL to mod zip"
+        required: true
+      engine:
+        description: "psych|codename|leather|js_engine"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y neko libvlc-dev libpng-dev libvorbis-dev libopenal-dev ffmpeg zip
+          wget https://github.com/HaxeFoundation/haxe/releases/download/4.3.6/haxe-4.3.6-linux64.tar.gz
+          tar -xzf haxe-4.3.6-linux64.tar.gz
+          echo "$PWD/haxe_*/" >> $GITHUB_PATH
+          haxelib setup ~/haxelib
+
+      - name: Download mod zip
+        run: curl -L "${{ github.event.inputs.mod_zip_url }}" -o mod.zip
+
+      - name: Detect engine (fallback)
+        id: detect
+        run: |
+          node -e "const fs=require('fs');const AdmZip=require('adm-zip');const z=new AdmZip('mod.zip');const e=z.getEntries().map(x=>x.entryName.toLowerCase());const m={psych:['mods/','pack.json'],codename:['codename/','mod.json'],leather:['leather/','content/'],js_engine:['assets/preload','songs/']};let b=['psych',0];for(const [k,v] of Object.entries(m)){const s=v.filter(p=>e.some(x=>x.includes(p))).length;if(s>b[1]) b=[k,s];}console.log('engine='+b[0])" >> $GITHUB_OUTPUT
+
+      - name: Clone base engine
+        run: |
+          ENGINE="${{ github.event.inputs.engine }}"
+          [ -z "$ENGINE" ] && ENGINE="${{ steps.detect.outputs.engine }}"
+          case "$ENGINE" in
+            psych) git clone https://github.com/ShadowMario/FNF-PsychEngine.git engine ;;
+            codename) git clone https://github.com/FNF-CNE-Devs/CodenameEngine.git engine ;;
+            leather) git clone https://github.com/Leather128/LeatherEngine.git engine ;;
+            js_engine) git clone https://github.com/Jaksongamer/FNF-JS-Engine.git engine ;;
+            *) echo "Unknown engine $ENGINE"; exit 1 ;;
+          esac
+
+      - name: Inject mod and normalize JS Engine audio casing
+        run: |
+          unzip -o mod.zip -d uploaded_mod
+          mkdir -p engine/mods
+          cp -R uploaded_mod/* engine/mods/
+          if [ "${{ github.event.inputs.engine }}" = "js_engine" ]; then
+            find engine/mods -type f | while read -r f; do
+              base=$(basename "$f")
+              dir=$(dirname "$f")
+              if [[ "$base" =~ ^voices\.ogg$ ]]; then mv "$f" "$dir/Voices.ogg"; fi
+              if [[ "$base" =~ ^inst\.ogg$ ]]; then mv "$f" "$dir/Inst.ogg"; fi
+            done
+          fi
+
+      - name: Handle videos for web
+        run: bash scripts/video-fallback.sh engine/mods disable
+
+      - name: Build html5
+        working-directory: engine
+        run: |
+          haxelib install lime
+          haxelib install openfl
+          haxelib install flixel
+          haxelib run lime setup
+          haxelib run lime build html5 -release -D DISCORD_DISABLE -D NO_PRELOAD_ALL
+
+      - name: Package export zip
+        run: bash scripts/prepare-web-export.sh engine/export/release/html5/bin web_export.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web_export
+          path: web_export.zip
