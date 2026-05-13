@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { detectEngineFromZipBuffer } from '@/lib/engineDetection';
-import { jobStore } from '@/lib/jobStore';
+import { detectEngineFromZipBuffer } from '../../../lib/engineDetection';
+import { jobStore } from '../../../lib/jobStore';
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
